@@ -31,7 +31,17 @@ const bot = mineflayer.createBot({
 
 async function moveToLocation(x: number, y: number, z: number) {
   bot.pathfinder.setGoal(new pathfinder.goals.GoalBlock(x, y, z));
-  return "Success!";
+  const currentLocation = bot.entity.position;
+  const distance = Math.sqrt(
+    Math.pow(x - currentLocation.x, 2) +
+    Math.pow(y - currentLocation.y, 2) +
+    Math.pow(z - currentLocation.z, 2)
+  );
+  if (distance < 2) {
+    bot.pathfinder.setGoal(null);
+    return "Success! Reached the location!";
+  }
+  return `Moving to location: x=${x}, y=${y}, z=${z} (currently at x=${bot.entity.position.x}, y=${bot.entity.position.y}, z=${bot.entity.position.z})`;
 }
 
 const moveToTool = FunctionTool.from(
@@ -60,11 +70,26 @@ const moveToTool = FunctionTool.from(
   }
 );
 
+async function stopMoving() {
+  bot.pathfinder.setGoal(null);
+  return "Success!";
+}
+
+const stopMovingTool = FunctionTool.from(
+  ({ }: {}) => stopMoving(),
+  {
+    name: "stopMoving",
+    description: "Use this function to stop the bot from moving",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  }
+);
+
 async function getPlayerLocation(playerName: string) {
   const player = bot.players[playerName];
-
-  console.log("Player:", player.username);
-
   const pos = player.entity.position;
   const responseBody = { location: { x: pos.x, y: pos.y, z: pos.z } };
   return JSON.stringify(responseBody);
@@ -98,7 +123,7 @@ async function getInventory() {
   return JSON.stringify(inventoryItems);
 }
 
-const getInventoryTool = FunctionTool.from(({}:{}) => getInventory(),
+const getInventoryTool = FunctionTool.from(({ }: {}) => getInventory(),
   {
     name: "getInventory",
     description: "Use this function to get the bot's inventory",
@@ -116,9 +141,9 @@ async function place(itemOrBlockName: any, x: number, y: number, z: number) {
   if (!itemOrBlockID) {
     return "Item not found in inventory!";
   }
-  bot.equip(itemOrBlockID, "hand");
+  await bot.equip(itemOrBlockID, "hand");
   try {
-    target && bot.placeBlock(target, new Vec3(0, 1, 0));
+    target && await bot.placeBlock(target, new Vec3(0, 1, 0));
   } catch (error) {
     return "Failed to place block!";
   } finally {
@@ -156,10 +181,10 @@ const placeTool = FunctionTool.from(
   }
 );
 
-function breakBlock(x: number, y: number, z: number) {
+async function breakBlock(x: number, y: number, z: number) {
   const target = bot.blockAt(new Vec3(x, y, z));
   try {
-    target && bot.dig(target);
+    target && await bot.dig(target);
   } catch (error) {
     return "Failed to break block!";
   } finally {
@@ -193,8 +218,8 @@ const breakBlockTool = FunctionTool.from(
   }
 );
 
-async function getUniqueBlocksAround() {
-  const uniqueBlocks: any = {};
+async function getBlocksAround() {
+  const blockList: any = {};
   for (let x = -2; x <= 2; x++) {
     for (let y = -2; y <= 2; y++) {
       for (let z = -2; z <= 2; z++) {
@@ -204,23 +229,23 @@ async function getUniqueBlocksAround() {
           if (blockName === "air") {
             continue;
           }
-          if (!uniqueBlocks[blockName]) {
-            uniqueBlocks[blockName] = { positions:[ { x: block.position.x, y: block.position.y, z: block.position.z }]};
+          if (!blockList[blockName]) {
+            blockList[blockName] = { positions: [{ x: block.position.x, y: block.position.y, z: block.position.z }] };
           } else {
-            uniqueBlocks[blockName].positions.push({ x: block.position.x, y: block.position.y, z: block.position.z });
+            blockList[blockName].positions.push({ x: block.position.x, y: block.position.y, z: block.position.z });
           }
         }
       }
     }
   }
-  return JSON.stringify(uniqueBlocks);
+  return JSON.stringify(blockList);
 }
 
-const getUniqueBlocksAroundTool = FunctionTool.from(
-  ({}:{}) => getUniqueBlocksAround(),
+const whereAreTheBlocksTool = FunctionTool.from(
+  ({ }: {}) => getBlocksAround(),
   {
-    name: "getUniqueBlocksAround",
-    description: "Use this function to get unique blocks around the bot",
+    name: "whereAreTheBlocksTool",
+    description: "Use this function to find all blocks and their locations around the bot if you don't know where they are",
     parameters: {
       type: "object",
       properties: {},
@@ -231,7 +256,7 @@ const getUniqueBlocksAroundTool = FunctionTool.from(
 
 const agent = new LLMAgent({
   llm: llm,
-  tools: [moveToTool, getPlayerLocationTool, getInventoryTool, placeTool, breakBlockTool, getUniqueBlocksAroundTool],
+  tools: [moveToTool, stopMovingTool, getPlayerLocationTool, getInventoryTool, placeTool, breakBlockTool, whereAreTheBlocksTool],
 });
 
 const messageHistory: { role: "user" | "assistant"; content: string }[] = [];
@@ -270,7 +295,7 @@ bot.on("start", () => {
 });
 
 bot.on("update", () => {
-  console.log("update");
+  // console.log("update");
 });
 
 bot.on("message", async (chatMessage, position) => {
@@ -285,7 +310,7 @@ bot.on("message", async (chatMessage, position) => {
 
   try {
     const response = await getAgentResponse(sender, message);
-    const botResponse = response.response;
+    const botResponse = response.message.content.toString();
     bot.chat(`@${sender} ${botResponse}`);
 
     messageHistory.push({ role: "assistant", content: botResponse });
