@@ -1,6 +1,6 @@
 import mineflayer from "mineflayer";
 import pathfinder from "mineflayer-pathfinder";
-import { LLMAgent } from "llamaindex";
+import { LLMAgent, FunctionTool } from "llamaindex";
 import { type BEDROCK_MODELS, Bedrock } from "@llamaindex/community";
 
 const llm = new Bedrock({
@@ -13,9 +13,89 @@ const llm = new Bedrock({
   },
 });
 
+declare module "mineflayer" {
+  interface BotEvents {
+    start: () => void;
+    update: () => void;
+  }
+}
+
+const bot = mineflayer.createBot({
+  host: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_HOST as string,
+  port: parseInt(process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_PORT as string),
+  username: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_USERNAME as string,
+  version: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_VERSION as string,
+  auth: "offline",
+});
+
+async function moveToLocation(x: number, y: number, z: number) {
+  bot.pathfinder.setGoal(new pathfinder.goals.GoalGetToBlock(x, y, z));
+  return "Success!";
+}
+
+const moveToTool = FunctionTool.from(
+  ({ x, y, z }: { x: number; y: number; z: number }) => moveToLocation(x, y, z),
+  {
+    name: "moveTo",
+    description: "Use this function to move to the specified location",
+    parameters: {
+      type: "object",
+      properties: {
+        x: {
+          type: "number",
+          description: "X coordinate",
+        },
+        y: {
+          type: "number",
+          description: "Y coordinate",
+        },
+        z: {
+          type: "number",
+          description: "Z coordinate",
+        },
+      },
+      required: ["x", "y", "z"],
+    },
+  }
+);
+
+async function getPlayerLocation(playerName: string) {
+  const player = bot.players[playerName];
+
+  console.log("Player:", player);
+
+  const pos = player.entity.position;
+
+  console.log("Player location:", pos);
+
+  const responseBody = { location: { x: pos.x, y: pos.y, z: pos.z } };
+
+  console.log(responseBody);
+
+  return JSON.stringify(responseBody);
+}
+
+const getPlayerLocationTool = FunctionTool.from(
+  ({ playerName }: { playerName: string }) => getPlayerLocation(playerName),
+  {
+    name: "getPlayerLocation",
+    description: "Use this function to get the location of a player",
+    parameters: {
+      type: "object",
+      properties: {
+        playerName: {
+          type: "string",
+          description: "Name of the player",
+        },
+      },
+      required: ["playerName"],
+    },
+  }
+);
+
 const agent = new LLMAgent({
   llm: llm,
-  tools: [],
+  tools: [moveToTool, getPlayerLocationTool],
 });
 
 const messageHistory: { role: "user" | "assistant"; content: string }[] = [];
@@ -38,21 +118,6 @@ async function getAgentResponse(sender: string, message: string) {
     chatHistory: chatHistory,
   });
 }
-
-declare module "mineflayer" {
-  interface BotEvents {
-    start: () => void;
-    update: () => void;
-  }
-}
-
-const bot = mineflayer.createBot({
-  host: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_HOST as string,
-  port: parseInt(process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_PORT as string),
-  username: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_USERNAME as string,
-  version: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_VERSION as string,
-  auth: "offline",
-});
 
 bot.loadPlugin(pathfinder.pathfinder);
 
