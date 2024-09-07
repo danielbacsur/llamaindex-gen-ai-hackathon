@@ -392,7 +392,6 @@ bot.on("start", () => {
 });
 
 bot.on("update", () => {
-  console.log("update");
   const blocks = getBlocksAroundWs();
   const playerPosition = bot.entity.position;
   wss.clients.forEach((client) => {
