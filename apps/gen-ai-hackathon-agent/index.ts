@@ -3,6 +3,11 @@ import pathfinder from "mineflayer-pathfinder";
 import { LLMAgent, FunctionTool } from "llamaindex";
 import { type BEDROCK_MODELS, Bedrock } from "@llamaindex/community";
 import { Vec3 } from 'vec3';
+import WebSocket from 'ws';
+
+const VIEW_DISTANCE = 4;
+
+const wss = new WebSocket.Server({ port: 8080 });
 
 const llm = new Bedrock({
   model: process.env.GEN_AI_HACKATHON_BEDROCK_MODEL as BEDROCK_MODELS,
@@ -218,6 +223,25 @@ const breakBlockTool = FunctionTool.from(
   }
 );
 
+function getBlocksAroundWs() {
+  const blocks: [string, number, number, number][] = [];
+  const playerPos = bot.entity.position;
+  const playerX = Math.floor(playerPos.x);
+  const playerY = Math.floor(playerPos.y);
+  const playerZ = Math.floor(playerPos.z);
+  for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
+    for (let y = -VIEW_DISTANCE; y <= VIEW_DISTANCE; y++) {
+      for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
+        const block = bot.blockAt(bot.entity.position.offset(x, y, z));
+        if (block !== null) {
+          blocks.push([block.name, x, y, z]);
+        }
+      }
+    }
+  }
+  return blocks;
+}
+
 async function getBlocksAround() {
   const blockList: any = {};
   for (let x = -2; x <= 2; x++) {
@@ -286,7 +310,7 @@ bot.on("login", () => {
   bot.emit("start");
   setInterval(() => {
     bot.emit("update");
-  }, 1000);
+  }, 1000/60);
 });
 
 bot.on("start", () => {
@@ -295,7 +319,16 @@ bot.on("start", () => {
 });
 
 bot.on("update", () => {
-  // console.log("update");
+  console.log("update");
+  const blocks = getBlocksAroundWs();
+  const playerPosition = bot.entity.position;
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ blocks, player: {
+        position: playerPosition
+      } }));
+    }
+  });
 });
 
 bot.on("message", async (chatMessage, position) => {
