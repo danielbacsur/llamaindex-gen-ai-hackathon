@@ -1,17 +1,8 @@
 {
-  "name": "gen-ai-hackathon",
-  "module": "index.ts",
-  "type": "module",
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@llamaindex/community": "^0.0.30",
-    "llamaindex": "^0.5.20",
-    "mineflayer": "^4.20.1",
-    "mineflayer-pathfinder": "^2.4.5"
-  }
+  "name": "@gen-ai-hackathon/gen-ai-hackathon",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/gen-ai-hackathon-agent"
+  ]
 }
