@@ -26,6 +26,79 @@ declare module "mineflayer" {
   }
 }
 
+function getAcronym(variableName: string) {
+  const words = variableName.split("_");
+  const acronym = words.map((word) => word[0]).join("");
+  return acronym.toLowerCase();
+}
+
+function rleStringArray(arr: string[]) {
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return [];
+  }
+
+  const result = [];
+  let currentString = arr[0];
+  let count = 1;
+
+  for (let i = 1; i <= arr.length; i++) {
+    if (i < arr.length && arr[i] === currentString) {
+      count++;
+    } else {
+      result.push(count === 1 ? currentString : `${count}${currentString}`);
+      if (i < arr.length) {
+        currentString = arr[i];
+        count = 1;
+      }
+    }
+  }
+
+  return result;
+}
+
+function encode(blocks: [string, number, number, number][]) {
+  const blockNames = blocks.map(([name]) => getAcronym(name));
+  const encodedBlockNames = rleStringArray(blockNames);
+  return encodedBlockNames.join(" ");
+}
+
+async function generateEmbeddings(worldDescription: string) {
+  const client = new Bedrock({ model: process.env.GEN_AI_HACKATHON_BEDROCK_MODEL as BEDROCK_MODELS, region: process.env.GEN_AI_HACKATHON_BEDROCK_REGION as string });
+
+  const input = {
+    "input_text": worldDescription
+  };
+
+  try {
+    const response = await client.complete({
+      prompt: worldDescription
+    });
+    const embedding = JSON.parse(new TextDecoder().decode(response.raw as Uint8Array)).embedding;
+    return embedding;
+  } catch (error) {
+    console.error("Error generating embeddings:", error);
+    return null;
+  }
+}
+
+const generateEmbeddingsTool = FunctionTool.from(
+  async ({}: {}) => {
+    const worldDescription = await getBlocksAround();
+    const embeddings = await generateEmbeddings(worldDescription);
+    return JSON.stringify(embeddings);
+  },
+  {
+    name: "generateEmbeddings",
+    description: "Use this function to generate embeddings based on the 3D world around the bot",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  }
+);
+
+
 const bot = mineflayer.createBot({
   host: process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_HOST as string,
   port: parseInt(process.env.GEN_AI_HACHATHON_MINECRAFT_SERVER_PORT as string),
@@ -310,7 +383,7 @@ bot.on("login", () => {
   bot.emit("start");
   setInterval(() => {
     bot.emit("update");
-  }, 1000/60);
+  }, 1000 / 60);
 });
 
 bot.on("start", () => {
@@ -324,9 +397,11 @@ bot.on("update", () => {
   const playerPosition = bot.entity.position;
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({ blocks, player: {
-        position: playerPosition
-      } }));
+      client.send(JSON.stringify({
+        blocks, player: {
+          position: playerPosition
+        }
+      }));
     }
   });
 });
